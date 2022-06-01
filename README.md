@@ -1,6 +1,6 @@
 # tidb-java-gitpod
 
-It's an empty gitpod environment and pre-installed TiDB and Java.
+It's an empty gitpod environment and pre-installed TiDB, Java and mycli.
 
 ## Usage
 
