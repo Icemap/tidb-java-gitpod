@@ -10,9 +10,9 @@ tasks:
     command: |
       $HOME/.tiup/bin/tiup playground
   - name: Terminal
-      command: |
-        clear
-        ls
+    command: |
+      clear
+      ls
 
 ports:
   - port: 8080
