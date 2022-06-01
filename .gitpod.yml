@@ -22,3 +22,6 @@ ports:
   - port: 2379-36663
     onOpen: ignore
 
+vscode:
+  extensions:
+    - vscjava.vscode-java-pack
