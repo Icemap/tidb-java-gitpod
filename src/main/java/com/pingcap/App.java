@@ -1,10 +1,18 @@
 package com.pingcap;
 
+import com.mysql.cj.MysqlConnection;
+import com.mysql.cj.Query;
+import com.mysql.cj.conf.PropertyDefinitions;
+import com.mysql.cj.conf.PropertyKey;
+import com.mysql.cj.interceptors.QueryInterceptor;
 import com.mysql.cj.jdbc.MysqlDataSource;
+import com.mysql.cj.log.Log;
+import com.mysql.cj.protocol.Resultset;
+import com.mysql.cj.protocol.ServerSession;
 
 import java.sql.*;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.Properties;
+import java.util.function.Supplier;
 
 /**
  * Hello world!
@@ -13,28 +21,49 @@ import java.util.List;
 public class App 
 {
     public static void main( String[] args ) throws SQLException {
-        MysqlDataSource mysqlDataSource = new MysqlDataSource();
-        mysqlDataSource.setURL("jdbc:mysql://localhost:4000/test?user=root&password=&useSSL=false&useServerPrepStmts=true&allowPublicKeyRetrieval=true");
+        String dbUrl = "jdbc:mysql://localhost:4001/test?user=root&password=&useSSL=false&useServerPrepStmts=true&allowPublicKeyRetrieval=true";
+        Properties props = new Properties();
+        props.setProperty(PropertyKey.sslMode.getKeyName(), PropertyDefinitions.SslMode.DISABLED.name());
+        props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
+        Connection preInsertConn = DriverManager.getConnection(dbUrl, props);
+        preInsertConn.createStatement().execute("DROP TABLE IF EXISTS testReversalOfScanFlags");
+        preInsertConn.createStatement().execute("CREATE TABLE testReversalOfScanFlags (f1 INT, f2 VARCHAR(255))");
+        preInsertConn.createStatement().execute("INSERT INTO testReversalOfScanFlags VALUES (1,\"a\"),(2,\"b\"),(3, \"c\")");
 
-        try (Connection connection = mysqlDataSource.getConnection()) {
-            connection.createStatement().execute("DROP TABLE IF EXISTS testBug71672");
-            connection.createStatement().execute("CREATE TABLE testBug71672 (id INT AUTO_INCREMENT PRIMARY KEY, ch CHAR(1) UNIQUE KEY, ct INT)");
-            printGeneratedKeys(connection, "INSERT INTO testBug71672 (ch, ct) VALUES ('A', 100), ('C', 100), ('D', 100)");
-            printGeneratedKeys(connection, "INSERT INTO testBug71672 (ch, ct) VALUES ('B', 2), ('C', 3), ('D', 4), ('E', 5) ON DUPLICATE KEY UPDATE ct = -1 * (ABS(ct) + VALUES(ct))");
-            printGeneratedKeys(connection, "INSERT INTO testBug71672 (ch, ct) VALUES ('F', 100) ON DUPLICATE KEY UPDATE ct = -1 * (ABS(ct) + VALUES(ct))");
-            printGeneratedKeys(connection, "INSERT INTO testBug71672 (ch, ct) VALUES ('B', 2), ('F', 6) ON DUPLICATE KEY UPDATE ct = -1 * (ABS(ct) + VALUES(ct))");
-        }
+        props.setProperty(PropertyKey.queryInterceptors.getKeyName(), IndexQueryInterceptor.class.getName());
+        Connection scanningConn = DriverManager.getConnection(dbUrl, props);
+        scanningConn.createStatement().executeQuery("SELECT f2 FROM testReversalOfScanFlags");
     }
 
-    public static void printGeneratedKeys(Connection connection, String sql) throws SQLException {
-        Statement stmt = connection.createStatement();
-        stmt.execute(sql, Statement.RETURN_GENERATED_KEYS);
-        ResultSet rs = stmt.getGeneratedKeys();
-        List<Integer> resultPKList = new LinkedList<>();
-        while (rs.next()) {
-            resultPKList.add(rs.getInt(1));
+    public static class IndexQueryInterceptor implements QueryInterceptor {
+
+        public QueryInterceptor init(MysqlConnection conn, Properties props, Log log) {
+            return this;
         }
 
-        System.out.println(resultPKList);
+        public <T extends Resultset> T preProcess(Supplier<String> sql, Query interceptedQuery) {
+            return null;
+        }
+
+        public boolean executeTopLevelOnly() {
+            return false;
+        }
+
+        public void destroy() {
+        }
+
+        public <T extends Resultset> T postProcess(Supplier<String> sql, Query interceptedQuery, T originalResultSet, ServerSession serverSession) {
+            System.out.println(sql);
+
+            if (serverSession.noIndexUsed()) {
+                System.out.println("This query no index to used");
+            } else if (serverSession.noGoodIndexUsed()) {
+                System.out.println("This query has good index to used");
+            } else {
+                System.out.println("This query has bad index to used");
+            }
+
+            return null;
+        }
     }
 }
