@@ -1,18 +1,10 @@
 package com.pingcap;
 
-import com.mysql.cj.MysqlConnection;
-import com.mysql.cj.Query;
 import com.mysql.cj.conf.PropertyDefinitions;
 import com.mysql.cj.conf.PropertyKey;
-import com.mysql.cj.interceptors.QueryInterceptor;
-import com.mysql.cj.jdbc.MysqlDataSource;
-import com.mysql.cj.log.Log;
-import com.mysql.cj.protocol.Resultset;
-import com.mysql.cj.protocol.ServerSession;
 
 import java.sql.*;
 import java.util.Properties;
-import java.util.function.Supplier;
 
 /**
  * Hello world!
@@ -20,50 +12,55 @@ import java.util.function.Supplier;
  */
 public class App 
 {
+    private final static String sha2User = "sha2user";
+    private final static String sha2Password = "sha2password";
+    private final static String createUserDBURL = "jdbc:mysql://localhost:3306/test?useSSL=false&useServerPrepStmts=true&allowPublicKeyRetrieval=true";
+    private final static String loginDBURL = "jdbc:mysql://localhost:3306";
+    private final static String authPlugin = "caching_sha2_password";
+
     public static void main( String[] args ) throws SQLException {
-        String dbUrl = "jdbc:mysql://localhost:4001/test?user=root&password=&useSSL=false&useServerPrepStmts=true&allowPublicKeyRetrieval=true";
+        System.out.println("1. create user with caching_sha2_password by no password");
+        testCachingSHA2Password(sha2User, "");
+        System.out.println("2. create user with caching_sha2_password by password exists");
+        testCachingSHA2Password(sha2User, sha2Password);
+    }
+
+    private static void testCachingSHA2Password(String createUser, String createPassword) throws SQLException {
+        // Root user connection props
         Properties props = new Properties();
         props.setProperty(PropertyKey.sslMode.getKeyName(), PropertyDefinitions.SslMode.DISABLED.name());
         props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
-        Connection preInsertConn = DriverManager.getConnection(dbUrl, props);
-        preInsertConn.createStatement().execute("DROP TABLE IF EXISTS testReversalOfScanFlags");
-        preInsertConn.createStatement().execute("CREATE TABLE testReversalOfScanFlags (f1 INT, f2 VARCHAR(255))");
-        preInsertConn.createStatement().execute("INSERT INTO testReversalOfScanFlags VALUES (1,\"a\"),(2,\"b\"),(3, \"c\")");
+        props.setProperty(PropertyKey.USER.getKeyName(), "root");
+        props.setProperty(PropertyKey.PASSWORD.getKeyName(), "123456");
+        Connection createUserConn = DriverManager.getConnection(createUserDBURL, props);
 
-        props.setProperty(PropertyKey.queryInterceptors.getKeyName(), IndexQueryInterceptor.class.getName());
-        Connection scanningConn = DriverManager.getConnection(dbUrl, props);
-        scanningConn.createStatement().executeQuery("SELECT f2 FROM testReversalOfScanFlags");
-    }
-
-    public static class IndexQueryInterceptor implements QueryInterceptor {
-
-        public QueryInterceptor init(MysqlConnection conn, Properties props, Log log) {
-            return this;
+        // Using `createUserConn` to create `sha2User` by no password
+        String createUserSQL = "CREATE USER IF NOT EXISTS '" + createUser + "' IDENTIFIED WITH " + authPlugin;
+        if (!createPassword.isEmpty()) {
+            createUserSQL += " BY '" + createPassword + "'";
         }
+        createUserConn.createStatement().execute(createUserSQL);
+        createUserConn.createStatement().execute("GRANT ALL ON *.* TO '" + createUser + "'");
+        createUserConn.createStatement().execute("FLUSH PRIVILEGES");
 
-        public <T extends Resultset> T preProcess(Supplier<String> sql, Query interceptedQuery) {
-            return null;
-        }
+        // Login with caching_sha2_password no password
+        Properties sha2props = new Properties();
+        sha2props.setProperty(PropertyKey.sslMode.getKeyName(), PropertyDefinitions.SslMode.DISABLED.name());
+        sha2props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
+        sha2props.setProperty(PropertyKey.defaultAuthenticationPlugin.getKeyName(), authPlugin);
+        sha2props.setProperty(PropertyKey.USER.getKeyName(), createUser);
+        sha2props.setProperty(PropertyKey.PASSWORD.getKeyName(), createPassword);
 
-        public boolean executeTopLevelOnly() {
-            return false;
-        }
-
-        public void destroy() {
-        }
-
-        public <T extends Resultset> T postProcess(Supplier<String> sql, Query interceptedQuery, T originalResultSet, ServerSession serverSession) {
-            System.out.println(sql);
-
-            if (serverSession.noIndexUsed()) {
-                System.out.println("This query no index to used");
-            } else if (serverSession.noGoodIndexUsed()) {
-                System.out.println("This query has good index to used");
-            } else {
-                System.out.println("This query has bad index to used");
+        try (Connection sha2passwordConn = DriverManager.getConnection(loginDBURL, sha2props)){
+            ResultSet testRs = sha2passwordConn.createStatement().executeQuery("SELECT CURRENT_USER()");
+            while (testRs.next()) {
+                System.out.println(testRs.getString(1));
             }
-
-            return null;
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            createUserConn.createStatement().execute("DROP USER IF EXISTS " + sha2User);
         }
     }
 }
+
