@@ -14,8 +14,8 @@ public class App
 {
     private final static String sha2User = "sha2user";
     private final static String sha2Password = "sha2password";
-    private final static String createUserDBURL = "jdbc:mysql://localhost:3306/test?useSSL=false&useServerPrepStmts=true&allowPublicKeyRetrieval=true";
-    private final static String loginDBURL = "jdbc:mysql://localhost:3306";
+    private final static String createUserDBURL = "jdbc:mysql://localhost:4001/test?user=root&password=&useSSL=false&useServerPrepStmts=true&allowPublicKeyRetrieval=true";
+    private final static String loginDBURL = "jdbc:mysql://localhost:4001";
     private final static String authPlugin = "caching_sha2_password";
 
     public static void main( String[] args ) throws SQLException {
@@ -30,8 +30,6 @@ public class App
         Properties props = new Properties();
         props.setProperty(PropertyKey.sslMode.getKeyName(), PropertyDefinitions.SslMode.DISABLED.name());
         props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
-        props.setProperty(PropertyKey.USER.getKeyName(), "root");
-        props.setProperty(PropertyKey.PASSWORD.getKeyName(), "123456");
         Connection createUserConn = DriverManager.getConnection(createUserDBURL, props);
 
         // Using `createUserConn` to create `sha2User` by no password
