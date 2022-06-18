@@ -6,12 +6,8 @@ image:
   file: .gitpod.Dockerfile
 
 tasks:
-  - name: TiUP init playground
-    command: |
-      $HOME/.tiup/bin/tiup playground
   - name: Terminal
     command: |
-      clear
       ls
 
 ports:
