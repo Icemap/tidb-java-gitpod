@@ -1,18 +1,13 @@
 package com.pingcap;
 
-import com.mysql.cj.MysqlConnection;
-import com.mysql.cj.Query;
 import com.mysql.cj.conf.PropertyDefinitions;
 import com.mysql.cj.conf.PropertyKey;
-import com.mysql.cj.interceptors.QueryInterceptor;
-import com.mysql.cj.jdbc.MysqlDataSource;
-import com.mysql.cj.log.Log;
-import com.mysql.cj.protocol.Resultset;
-import com.mysql.cj.protocol.ServerSession;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.Properties;
-import java.util.function.Supplier;
 
 /**
  * Hello world!
@@ -21,49 +16,37 @@ import java.util.function.Supplier;
 public class App 
 {
     public static void main( String[] args ) throws SQLException {
-        String dbUrl = "jdbc:mysql://localhost:4001/test?user=root&password=&useSSL=false&useServerPrepStmts=true&allowPublicKeyRetrieval=true";
-        Properties props = new Properties();
+        String dbUrl = "jdbc:mysql://localhost:4000/test?user=root&password=&useServerPrepStmts=true";
+
+        Connection preInsertConn = DriverManager.getConnection(dbUrl);
+        preInsertConn.createStatement().execute("DROP TABLE IF EXISTS testBug89948");
+        preInsertConn.createStatement().execute("CREATE TABLE testBug89948 (id INT PRIMARY KEY)");
+
+        boolean allowMQ = false;
+        boolean rwBatchStmts = true;
+        boolean useLTS = true;
+
+        final Properties props = new Properties();
         props.setProperty(PropertyKey.sslMode.getKeyName(), PropertyDefinitions.SslMode.DISABLED.name());
         props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
-        Connection preInsertConn = DriverManager.getConnection(dbUrl, props);
-        preInsertConn.createStatement().execute("DROP TABLE IF EXISTS testReversalOfScanFlags");
-        preInsertConn.createStatement().execute("CREATE TABLE testReversalOfScanFlags (f1 INT, f2 VARCHAR(255))");
-        preInsertConn.createStatement().execute("INSERT INTO testReversalOfScanFlags VALUES (1,\"a\"),(2,\"b\"),(3, \"c\")");
 
-        props.setProperty(PropertyKey.queryInterceptors.getKeyName(), IndexQueryInterceptor.class.getName());
-        Connection scanningConn = DriverManager.getConnection(dbUrl, props);
-        scanningConn.createStatement().executeQuery("SELECT f2 FROM testReversalOfScanFlags");
-    }
+        props.setProperty(PropertyKey.allowMultiQueries.getKeyName(), Boolean.toString(allowMQ));
+        props.setProperty(PropertyKey.rewriteBatchedStatements.getKeyName(), Boolean.toString(rwBatchStmts));
+        props.setProperty(PropertyKey.useLocalTransactionState.getKeyName(), Boolean.toString(useLTS));
+        props.setProperty(PropertyKey.useLocalSessionState.getKeyName(), Boolean.toString(useLTS));
 
-    public static class IndexQueryInterceptor implements QueryInterceptor {
+        Connection testConn = DriverManager.getConnection(dbUrl, props);
+        testConn.setAutoCommit(false);
 
-        public QueryInterceptor init(MysqlConnection conn, Properties props, Log log) {
-            return this;
+        PreparedStatement pstmt = testConn.prepareStatement("INSERT INTO testBug89948 VALUES (?)");
+        for (int i = 1; i <= 10; i++) {
+            pstmt.setInt(1, i);
+            pstmt.addBatch();
         }
+        pstmt.executeBatch();
+        testConn.commit();
 
-        public <T extends Resultset> T preProcess(Supplier<String> sql, Query interceptedQuery) {
-            return null;
-        }
-
-        public boolean executeTopLevelOnly() {
-            return false;
-        }
-
-        public void destroy() {
-        }
-
-        public <T extends Resultset> T postProcess(Supplier<String> sql, Query interceptedQuery, T originalResultSet, ServerSession serverSession) {
-            System.out.println(sql);
-
-            if (serverSession.noIndexUsed()) {
-                System.out.println("This query no index to used");
-            } else if (serverSession.noGoodIndexUsed()) {
-                System.out.println("This query has good index to used");
-            } else {
-                System.out.println("This query has bad index to used");
-            }
-
-            return null;
-        }
+        pstmt.close();
+        testConn.close();
     }
 }
