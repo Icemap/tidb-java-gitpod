@@ -16,7 +16,7 @@ import java.util.Properties;
 public class App 
 {
     public static void main( String[] args ) throws SQLException {
-        String dbUrl = "jdbc:mysql://172.16.5.185:4000/test?&useServerPrepStmts=true" +
+        String dbUrl = "jdbc:mysql://127.0.0.1:4000/test?&useServerPrepStmts=true" +
 				"&sslMode=disabled&allowPublicKeyRetrieval=true" +
 				"&allowMultiQueries=false&rewriteBatchedStatements=false&useLocalTransactionState=true"+
 				"&useLocalSessionState=true";
